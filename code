@@ -1,0 +1,57 @@
+import numpy as np
+import skfuzzy as fuzz
+from skfuzzy import control as ctrl
+
+# 1. Khai báo biến mờ với giới hạn mới
+product_density = ctrl.Antecedent(np.arange(0, 21, 1), 'product_density')  # items/m
+gap_distance = ctrl.Antecedent(np.arange(0, 51, 1), 'gap_distance')       # cm
+conveyor_speed = ctrl.Consequent(np.arange(20, 61, 1), 'conveyor_speed')   # m/phút
+
+# 2. Định nghĩa hàm thành viên
+product_density['sparse'] = fuzz.trimf(product_density.universe, [0, 0, 8])
+product_density['normal'] = fuzz.trimf(product_density.universe, [5, 10, 15])
+product_density['dense'] = fuzz.trimf(product_density.universe, [12, 20, 20])
+
+gap_distance['small'] = fuzz.trimf(gap_distance.universe, [0, 0, 20])
+gap_distance['medium'] = fuzz.trimf(gap_distance.universe, [10, 25, 40])
+gap_distance['large'] = fuzz.trimf(gap_distance.universe, [30, 50, 50])
+
+conveyor_speed['slow'] = fuzz.trimf(conveyor_speed.universe, [20, 20, 35])
+conveyor_speed['normal'] = fuzz.trimf(conveyor_speed.universe, [30, 40, 50])
+conveyor_speed['fast'] = fuzz.trimf(conveyor_speed.universe, [45, 60, 60])
+
+# 3. Luật mờ
+rules = [
+    ctrl.Rule(product_density['sparse'] & gap_distance['large'], conveyor_speed['fast']),
+    ctrl.Rule(product_density['sparse'] & gap_distance['medium'], conveyor_speed['normal']),
+    ctrl.Rule(product_density['sparse'] & gap_distance['small'], conveyor_speed['slow']),
+
+    ctrl.Rule(product_density['normal'] & gap_distance['large'], conveyor_speed['fast']),
+    ctrl.Rule(product_density['normal'] & gap_distance['medium'], conveyor_speed['normal']),
+    ctrl.Rule(product_density['normal'] & gap_distance['small'], conveyor_speed['slow']),
+
+    ctrl.Rule(product_density['dense'] & gap_distance['large'], conveyor_speed['normal']),
+    ctrl.Rule(product_density['dense'] & gap_distance['medium'], conveyor_speed['slow']),
+    ctrl.Rule(product_density['dense'] & gap_distance['small'], conveyor_speed['slow'])
+]
+
+# 4. Hệ thống điều khiển
+speed_ctrl = ctrl.ControlSystem(rules)
+speed_sim = ctrl.ControlSystemSimulation(speed_ctrl)
+
+# 5. Nhập dữ liệu từ người dùng
+density_val = float(input("Nhập Product Density (items/m, 0-20): "))
+gap_val = float(input("Nhập Gap Distance (cm, 0-50): "))
+
+# 6. Tính toán fuzzy
+speed_sim.input['product_density'] = density_val
+speed_sim.input['gap_distance'] = gap_val
+speed_sim.compute()
+
+# 7. Xuất kết quả
+speed = speed_sim.output['conveyor_speed']
+print(f"Tốc độ băng chuyền: {speed:.2f} m/phút")
+
+product_density.view()
+gap_distance.view()
+conveyor_speed.view()
