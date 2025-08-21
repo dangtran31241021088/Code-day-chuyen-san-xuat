@@ -1,0 +1,145 @@
+import osmnx as ox
+import networkx as nx
+import folium
+import skfuzzy as fuzz
+import numpy as np
+import ipywidgets as widgets
+from IPython.display import display
+
+# -----------------------------
+# 1. Tải bản đồ Quận 1, TP.HCM
+# -----------------------------
+place = "District 1, Ho Chi Minh City, Vietnam"
+G = ox.graph_from_place(place, network_type="drive")
+
+# -----------------------------
+# 2. Danh sách địa điểm cụ thể
+# -----------------------------
+places = {
+    "Nhà thờ Đức Bà": (10.7797838, 106.6990184),
+    "Bưu điện Trung tâm": (10.780138, 106.699470),
+    "Chợ Bến Thành": (10.772114, 106.698056),
+    "Phố đi bộ Nguyễn Huệ": (10.772942, 106.704880),
+    "Dinh Độc Lập": (10.777182, 106.695533),
+    "Bitexco Tower": (10.771900, 106.704044),
+    "Bảo tàng Mỹ thuật": (10.769940, 106.697220),
+    "Cảng Nhà Rồng": (10.762522, 106.709350),
+    "Công viên 30/4": (10.776385, 106.698883),
+    "Nhà hát Thành phố": (10.776889, 106.703280),
+    "Khách sạn Rex": (10.776290, 106.702610),
+    "Chợ Dân Sinh": (10.764420, 106.702960),
+    "Trường ĐH Kinh tế TP.HCM": (10.773220, 106.698100),
+    "Tòa án Nhân dân TP.HCM": (10.776010, 106.695930),
+    "Bảo tàng Thành phố": (10.772870, 106.697380),
+    "Công viên Tao Đàn": (10.774070, 106.692420),
+    "Bệnh viện Nhi Đồng 2": (10.784060, 106.699650),
+    "Khách sạn Caravelle": (10.776770, 106.703980),
+    "Trường Lê Quý Đôn": (10.774770, 106.692910),
+    "Hồ Con Rùa": (10.779660, 106.698540)
+}
+
+# -----------------------------
+# 3. Widget giao diện
+# -----------------------------
+start_dropdown = widgets.Dropdown(options=list(places.keys()), description="Start:")
+end_dropdown = widgets.Dropdown(options=list(places.keys()), description="End:")
+
+vehicle_dropdown = widgets.Dropdown(options=["Xe máy", "Xe hơi"], description="Phương tiện:")
+weather_dropdown = widgets.Dropdown(options=["Nắng", "Mưa"], description="Thời tiết:")
+time_dropdown = widgets.Dropdown(options=["Bình thường", "Cao điểm"], description="Khung giờ:")
+
+button_run = widgets.Button(description="Tìm đường đi")
+output = widgets.Output()
+
+# -----------------------------
+# 4. Hàm xử lý khi nhấn nút
+# -----------------------------
+def run_route(b):
+    with output:
+        output.clear_output()
+
+        start_name = start_dropdown.value
+        end_name = end_dropdown.value
+
+        if start_name == end_name:
+            print("Điểm Bắt đầu và Kết thúc không được trùng nhau. Vui lòng chọn lại.")
+            return
+
+        vehicle = vehicle_dropdown.value
+        weather = weather_dropdown.value
+        time = time_dropdown.value
+
+        start_point = places[start_name]
+        end_point = places[end_name]
+
+        # tìm node gần nhất với địa điểm
+        start_node = ox.distance.nearest_nodes(G, start_point[1], start_point[0])
+        end_node = ox.distance.nearest_nodes(G, end_point[1], end_point[0])
+# tìm đường đi ngắn nhất
+        route = nx.shortest_path(G, start_node, end_node, weight="length")
+        route_length = nx.shortest_path_length(G, start_node, end_node, weight="length") / 1000  # km
+
+        # bản đồ
+        m = folium.Map(location=start_point, zoom_start=15)
+        folium.Marker(start_point, tooltip=f"Start: {start_name}", icon=folium.Icon(color="green")).add_to(m)
+        folium.Marker(end_point, tooltip=f"End: {end_name}", icon=folium.Icon(color="red")).add_to(m)
+
+        route_coords = [(G.nodes[node]["y"], G.nodes[node]["x"]) for node in route]
+        folium.PolyLine(route_coords, color="blue", weight=5).add_to(m)
+
+        print(f"📍 Từ {start_name} đến {end_name}")
+        print(f"📏 Khoảng cách: {route_length:.2f} km")
+
+        # -----------------------------
+        # 5. Tính giá bằng Fuzzy Logic
+        # -----------------------------
+        distance = np.arange(0, 21, 1)
+        price = np.arange(0, 201, 1)
+
+        dist_low = fuzz.trimf(distance, [0, 0, 5])
+        dist_med = fuzz.trimf(distance, [3, 10, 15])
+        dist_high = fuzz.trimf(distance, [10, 20, 20])
+
+        price_low = fuzz.trimf(price, [0, 0, 50])
+        price_med = fuzz.trimf(price, [30, 100, 150])
+        price_high = fuzz.trimf(price, [100, 200, 200])
+
+        d_low = fuzz.interp_membership(distance, dist_low, route_length)
+        d_med = fuzz.interp_membership(distance, dist_med, route_length)
+        d_high = fuzz.interp_membership(distance, dist_high, route_length)
+
+        rule_low = d_low
+        rule_med = d_med
+        rule_high = d_high
+
+        price_activation_low = np.fmin(rule_low, price_low)
+        price_activation_med = np.fmin(rule_med, price_med)
+        price_activation_high = np.fmin(rule_high, price_high)
+
+        aggregated = np.fmax(price_activation_low,
+                        np.fmax(price_activation_med, price_activation_high))
+
+        base_price = fuzz.defuzz(price, aggregated, 'centroid')
+
+        # -----------------------------
+        # 6. Điều chỉnh theo phương tiện, thời tiết & khung giờ
+        # -----------------------------
+        if vehicle == "Xe hơi":
+            base_price *= 1.5
+        if weather == "Mưa":
+            base_price *= 1.2
+        if time == "Cao điểm":
+            base_price *= 1.3
+
+        print(f"🚖 Phương tiện: {vehicle}")
+        print(f"🌦️ Thời tiết: {weather}")
+        print(f"⏰ Khung giờ: {time}")
+        print(f"💰 Giá chuyến đi (ước tính): {base_price:.0f} nghìn VNĐ")
+
+        display(m)
+
+# -----------------------------
+# 7. Hiển thị giao diện
+# -----------------------------
+button_run.on_click(run_route)
+display(start_dropdown, end_dropdown, vehicle_dropdown, weather_dropdown, time_dropdown, button_run, output)
