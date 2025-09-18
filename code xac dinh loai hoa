@@ -70,7 +70,7 @@ if len(np.unique(y)) > 1 and len(X) > 10:
     print(f"Độ chính xác test (ANN): {acc*100:.2f}%")
 
 # ========================================
-# 5. Hàm dự đoán thử ảnh mới (chỉ dùng ANN)
+# 5. Hàm dự đoán thử ảnh mới 
 # ========================================
 def predict_flower(img_path):
     img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
