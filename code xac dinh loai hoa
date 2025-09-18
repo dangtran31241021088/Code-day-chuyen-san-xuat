@@ -9,19 +9,11 @@ from sklearn.model_selection import train_test_split
 from keras.utils import to_categorical
 from keras.models import Sequential
 from keras.layers import Dense, Dropout
-from sklearn.neighbors import KNeighborsClassifier
 
 # ========================================
 # 2. Cấu hình
 # ========================================
-# Thư mục chứa dataset: mỗi thư mục con = 1 loại hoa
-# data_flower/
-#  ├── hong_do/
-#  ├── hong_trang/
-#  ├── cuc/
-#  ├── sen/
-#  └── lan/
-data_dir = "/content/drive/MyDrive/data_flower"  
+data_dir = "/content/drive/MyDrive/data_flower"
 img_size = 64
 
 # ========================================
@@ -51,7 +43,7 @@ print("Tổng số ảnh:", len(X))
 print("Các loài hoa:", labels)
 
 # ========================================
-# 4A. ANN (nếu có nhiều ảnh mỗi lớp)
+# 4. Tách tập train/test & tạo ANN
 # ========================================
 if len(np.unique(y)) > 1 and len(X) > 10:
     X_train, X_test, y_train, y_test = train_test_split(
@@ -62,28 +54,25 @@ if len(np.unique(y)) > 1 and len(X) > 10:
     y_train_cat = to_categorical(y_train, num_classes=num_classes)
     y_test_cat  = to_categorical(y_test, num_classes=num_classes)
 
-    model = Sequential()
-    model.add(Dense(512, activation='relu', input_shape=(img_size*img_size,)))
-    model.add(Dropout(0.3))
-    model.add(Dense(256, activation='relu'))
-    model.add(Dense(num_classes, activation='softmax'))
+    model = Sequential([
+        Dense(512, activation='relu', input_shape=(img_size*img_size,)),
+        Dropout(0.3),
+        Dense(256, activation='relu'),
+        Dense(num_classes, activation='softmax')
+    ])
 
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
 
-    print("\n Training ANN...")
+    print("\nTraining ANN...")
     history = model.fit(X_train, y_train_cat, epochs=20, batch_size=32, validation_split=0.1)
 
     loss, acc = model.evaluate(X_test, y_test_cat)
     print(f"Độ chính xác test (ANN): {acc*100:.2f}%")
 
-knn = KNeighborsClassifier(n_neighbors=1)
-knn.fit(X, y)
-
-
 # ========================================
-# 5. Hàm dự đoán thử ảnh mới
+# 5. Hàm dự đoán thử ảnh mới (chỉ dùng ANN)
 # ========================================
-def predict_flower(img_path, method="knn"):
+def predict_flower(img_path):
     img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
     if img is None:
         print("Không đọc được ảnh:", img_path)
@@ -91,11 +80,8 @@ def predict_flower(img_path, method="knn"):
     img = cv2.resize(img, (img_size, img_size))
     img_input = img.reshape(1, img_size*img_size).astype("float32")/255.0
 
-    if method == "ann" and 'model' in globals():
-        pred = model.predict(img_input)
-        flower_pred = labels[np.argmax(pred)]
-    else:  # dùng KNN
-        flower_pred = labels[knn.predict(img_input)[0]]
+    pred = model.predict(img_input)
+    flower_pred = labels[np.argmax(pred)]
 
     plt.imshow(img, cmap="gray")
     plt.title(f"Dự đoán: {flower_pred}")
@@ -106,7 +92,6 @@ def predict_flower(img_path, method="knn"):
 # ========================================
 # 6. Test thử
 # ========================================
-test_img_path = "/content/drive/MyDrive/test_flower.jpg" 
+test_img_path = "/content/drive/MyDrive/test_flower.jpg"
 print("Ảnh test:", test_img_path)
-print("Kết quả:", predict_flower(test_img_path, method="knn"))
-
+print("Kết quả:", predict_flower(test_img_path))
