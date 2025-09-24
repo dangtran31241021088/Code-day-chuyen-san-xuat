@@ -1,0 +1,167 @@
+!pip install -q kaggle
+
+from google.colab import files
+files.upload()
+!mkdir -p ~/.kaggle
+!cp kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json 
+!kaggle datasets download -d alxmamaev/flowers-recognition -p /content/
+!unzip -q /content/flowers-recognition.zip -d /content/flowers_data
+import os
+
+data_dir = "/content/flowers_data/flowers"
+print("Classes:", os.listdir(data_dir))   # ['daisy', 'dandelion', 'rose', 'sunflower', 'tulip']
+
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+datagen = ImageDataGenerator(
+    rescale=1./255,
+    validation_split=0.2,
+    rotation_range=20,
+    zoom_range=0.2,
+    horizontal_flip=True
+)
+
+train_gen = datagen.flow_from_directory(
+    data_dir,
+    target_size=(128,128),
+    batch_size=32,
+    class_mode='categorical',
+    subset='training'
+)
+
+val_gen = datagen.flow_from_directory(
+    data_dir,
+    target_size=(128,128),
+    batch_size=32,
+    class_mode='categorical',
+    subset='validation'
+)
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+
+model = Sequential([
+    Conv2D(32, (3,3), activation='relu', input_shape=(128,128,3)),
+    MaxPooling2D(pool_size=(2,2)),
+
+    Conv2D(64, (3,3), activation='relu'),
+    MaxPooling2D(pool_size=(2,2)),
+
+    Conv2D(128, (3,3), activation='relu'),
+    MaxPooling2D(pool_size=(2,2)),
+
+    Flatten(),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(5, activation='softmax')   # 5 lớp hoa
+])
+
+model.compile(optimizer=Adam(0.001),
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+model.summary()
+
+history = model.fit(
+    train_gen,
+    validation_data=val_gen,
+    epochs=10
+)
+
+# Lưu model
+model.save("/content/flowers_cnn.h5")
+
+import matplotlib.pyplot as plt
+
+plt.plot(history.history['accuracy'], label='Train acc')
+plt.plot(history.history['val_accuracy'], label='Val acc')
+plt.legend()
+plt.title("Accuracy")
+plt.show()
+
+plt.plot(history.history['loss'], label='Train loss')
+plt.plot(history.history['val_loss'], label='Val loss')
+plt.legend()
+plt.title("Loss")
+plt.show()
+model.save('flower10.h5')#lưu dữ liệu train
+%%writefile app.py
+import streamlit as st
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
+import pickle
+import os
+
+
+MODEL_PATH = "flowers_cnn.h5"
+model = load_model(MODEL_PATH)
+
+# Class labels (dataset flowers-recognition)
+class_names = ['daisy', 'dandelion', 'rose', 'sunflower', 'tulip']
+
+st.title("Flower Classification App")
+st.write("Upload ảnh hoa để hệ thống nhận diện loài hoa.")
+
+# =============================
+# 3. Upload ảnh từ user
+# =============================
+uploaded_file = st.file_uploader("Chọn ảnh hoa...", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    st.image(uploaded_file, caption="Ảnh đã tải lên", use_column_width=True)
+
+    img = image.load_img(uploaded_file, target_size=(128, 128))
+    img_array = image.img_to_array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+
+    preds = model.predict(img_array)
+    pred_class = class_names[np.argmax(preds)]
+    confidence = np.max(preds) * 100
+
+    st.subheader("Kết quả dự đoán:")
+    st.write(f"Loài hoa: **{pred_class}**")
+    st.write(f"Độ tin cậy: **{confidence:.2f}%**")
+
+    # Biểu đồ xác suất
+    fig, ax = plt.subplots()
+    ax.bar(class_names, preds[0])
+    ax.set_ylabel("Xác suất")
+    ax.set_title("Phân bố xác suất giữa các lớp")
+    st.pyplot(fig)
+
+
+if os.path.exists("history.pkl"):
+    with open("history.pkl", "rb") as f:
+        history = pickle.load(f)
+
+    st.subheader("Training Performance")
+
+    fig_acc, ax_acc = plt.subplots()
+    ax_acc.plot(history['accuracy'], label='Train acc')
+    ax_acc.plot(history['val_accuracy'], label='Val acc')
+    ax_acc.legend()
+    ax_acc.set_title("Accuracy")
+    st.pyplot(fig_acc)
+
+    fig_loss, ax_loss = plt.subplots()
+    ax_loss.plot(history['loss'], label='Train loss')
+    ax_loss.plot(history['val_loss'], label='Val loss')
+    ax_loss.legend()
+    ax_loss.set_title("Loss")
+    st.pyplot(fig_loss)
+else:
+    st.info(" Không tìm thấy file history.pkl. Chỉ hiển thị dự đoán ảnh.")
+!ngrok config add-authtoken 32E9MqFQ5g6z3H2SQmWaHPjtjgk_3VcHyH1zo6dYWJwBpeXLh
+from pyngrok import ngrok
+
+# Mở cổng 8501 cho Streamlit
+public_url = ngrok.connect(8501)
+print(" Ngrok URL:", public_url)
+
+# Chạy Streamlit
+!streamlit run app.py --server.port 8501 &> /dev/null &
